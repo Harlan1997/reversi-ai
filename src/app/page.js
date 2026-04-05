@@ -75,10 +75,10 @@ export default function Arena() {
     setGameActive(false);
     setIsAutoRun(false);
 
-    if ((gameMode === 'Bot_vs_AI' || gameMode === 'Bot_vs_Bot') && currentUserId) {
+    if ((gameMode === 'Bot_vs_AI' || gameMode === 'Bot_vs_Bot' || gameMode === 'Player_vs_Bot') && currentUserId) {
       const allUsers = await fetchUsers();
       const meId = currentUserId;
-      const opId = gameMode === 'Bot_vs_Bot' && opponentId ? opponentId : '1';
+      const opId = (gameMode === 'Bot_vs_Bot' || gameMode === 'Player_vs_Bot') && opponentId ? opponentId : '1';
 
       const me = allUsers.find(u => u.id === meId);
       const op = allUsers.find(u => u.id === opId);
@@ -197,7 +197,7 @@ export default function Arena() {
             }
           }
         });
-      } else if (gameMode === 'Bot_vs_Bot') {
+      } else if (gameMode === 'Bot_vs_Bot' || gameMode === 'Player_vs_Bot') {
         runAI_Opponent(board, WHITE).then(move => {
           if (move) {
             const newBoard = playMove(boardRef.current, move.row, move.col, WHITE);
@@ -254,7 +254,7 @@ export default function Arena() {
   }, [gameActive, gameMode, currentPlayer, isAutoRun, isThinking, handleBotStep]);
 
   const handlePlayerMove = (r, c) => {
-    if (currentPlayer === BLACK && gameMode === 'Player_vs_AI' && gameActive) {
+    if (currentPlayer === BLACK && (gameMode === 'Player_vs_AI' || gameMode === 'Player_vs_Bot') && gameActive) {
       const newBoard = playMove(board, r, c, BLACK);
       if (newBoard) {
         setBoard(newBoard);
@@ -294,11 +294,11 @@ export default function Arena() {
     opponentCodeRef.current = oppBot ? oppBot.code : "return null;";
 
     setOpponentId(oppId);
-    setGameMode('Bot_vs_Bot');
+    setGameMode('Player_vs_Bot');
     setBoard(createBoard());
     setCurrentPlayer(BLACK);
     setGameActive(true);
-    setStatusText(`Bot vs Bot: You vs ${oppUser.username}`);
+    setStatusText(`Challenge: You vs ${oppUser.username} (click to play)`);
   };
 
   return (
