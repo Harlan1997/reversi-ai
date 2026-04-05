@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Board from '../components/Board';
 import Leaderboard from '../components/Leaderboard';
 import { createBoard, getValidMoves, playMove, isGameOver, getScore, BLACK, WHITE } from '../lib/reversi';
-import { getUserBot, saveUserBot, fetchUsers, updateUserElo, addMatchRecord } from '../lib/mockDb';
+import { getUserBot, saveUserBot, fetchUsers, updateUserElo, addMatchRecord } from '../lib/db';
 import { calculateElo } from '../lib/elo';
 
 const DEFAULT_BOT_CODE = `// Get the best score directly
@@ -24,17 +24,40 @@ export default function Arena() {
   const [opponentId, setOpponentId] = useState(null);
   const [isThinking, setIsThinking] = useState(false);
   const [isAutoRun, setIsAutoRun] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   const workerRef = useRef(null);
   const opponentWorkerRef = useRef(null);
   const boardRef = useRef([]);
+  const sysAiCodeRef = useRef("return null;");
+  const opponentCodeRef = useRef("return null;");
   boardRef.current = board;
 
+  // Load initial data (async)
   useEffect(() => {
     setBoard(createBoard());
-    const bot = getUserBot('2');
-    if (bot) setBotCode(bot.code);
-    setUsers(fetchUsers());
+
+    async function init() {
+      // Load user list
+      const allUsers = await fetchUsers();
+      setUsers(allUsers);
+
+      // Determine current user id (first non-bot, non-system user)
+      const me = allUsers.find(u => !u.isBot && u.username !== 'System AI');
+      const myId = me ? me.id : null;
+      setCurrentUserId(myId);
+
+      // Load my bot code
+      if (myId) {
+        const bot = await getUserBot(myId);
+        if (bot) setBotCode(bot.code);
+      }
+
+      // Pre-load System AI code
+      const sysBot = await getUserBot('1');
+      if (sysBot) sysAiCodeRef.current = sysBot.code;
+    }
+    init();
 
     workerRef.current = new Worker('/workers/botWorker.js');
     opponentWorkerRef.current = new Worker('/workers/botWorker.js');
@@ -44,44 +67,45 @@ export default function Arena() {
     };
   }, []);
 
-  const handleGameOver = useCallback((currentBoard) => {
+  const handleGameOver = useCallback(async (currentBoard) => {
     const scores = getScore(currentBoard);
     const blackScore = scores[BLACK];
     const whiteScore = scores[WHITE];
     setStatusText("Game Over! Black: " + blackScore + " | White: " + whiteScore);
     setGameActive(false);
+    setIsAutoRun(false);
 
-    if (gameMode === 'Bot_vs_AI' || gameMode === 'Bot_vs_Bot') {
-      const allUsers = fetchUsers();
-      const meId = '2';
+    if ((gameMode === 'Bot_vs_AI' || gameMode === 'Bot_vs_Bot') && currentUserId) {
+      const allUsers = await fetchUsers();
+      const meId = currentUserId;
       const opId = gameMode === 'Bot_vs_Bot' && opponentId ? opponentId : '1';
-      
+
       const me = allUsers.find(u => u.id === meId);
       const op = allUsers.find(u => u.id === opId);
-      
+
       if (me && op) {
         const scoreMe = blackScore > whiteScore ? 1 : blackScore === whiteScore ? 0.5 : 0;
         const scoreOp = 1 - scoreMe;
         const [newMe, newOp] = calculateElo(me.elo, op.elo, scoreMe, scoreOp);
 
-        updateUserElo(meId, newMe);
-        updateUserElo(opId, newOp);
-        addMatchRecord({ playerId: meId, opponentId: opId, scoreMe, myElo: newMe, opElo: newOp });
-        
-        setUsers(fetchUsers());
+        await updateUserElo(meId, newMe);
+        await updateUserElo(opId, newOp);
+        await addMatchRecord({ playerId: meId, opponentId: opId, scoreMe, myElo: newMe, opElo: newOp });
+
+        const refreshed = await fetchUsers();
+        setUsers(refreshed);
         setTimeout(() => {
           alert(`Match Recorded! Your new ELO: ${newMe} (was ${me.elo})`);
         }, 100);
       }
     }
-  }, [gameMode, opponentId]);
+  }, [gameMode, opponentId, currentUserId]);
 
   const runAI_System = useCallback(async (b, player) => {
     return new Promise((resolve) => {
       const id = Date.now() + 'sys';
-      const sysBot = getUserBot('1');
-      const code = sysBot ? sysBot.code : "return null;";
-      
+      const code = sysAiCodeRef.current;
+
       const onMsg = (e) => {
         if (e.data.id === id) {
           opponentWorkerRef.current.removeEventListener('message', onMsg);
@@ -102,8 +126,7 @@ export default function Arena() {
   const runAI_Opponent = useCallback(async (b, player) => {
     return new Promise((resolve) => {
       const id = Date.now();
-      const oppBot = getUserBot(opponentId);
-      const code = oppBot ? oppBot.code : "return null;";
+      const code = opponentCodeRef.current;
 
       const onMsg = (e) => {
         if (e.data.id === id) {
@@ -119,7 +142,7 @@ export default function Arena() {
       opponentWorkerRef.current.addEventListener('message', onMsg);
       opponentWorkerRef.current.postMessage({ id, code, state: { board: b }, myPlayer: player });
     });
-  }, [opponentId]);
+  }, []);
 
   const runAI_User = useCallback(async (b, player) => {
     return new Promise((resolve) => {
@@ -185,7 +208,6 @@ export default function Arena() {
               }, 500);
             }
           } else {
-            // opponent failed to return move, forfeit maybe? Handle simply by skipping or random
             const fallbackMove = moves[Math.floor(Math.random() * moves.length)];
             const newBoard = playMove(boardRef.current, fallbackMove.row, fallbackMove.col, WHITE);
             if (newBoard) { setTimeout(() => { setBoard(newBoard); setCurrentPlayer(BLACK); }, 500); }
@@ -241,8 +263,14 @@ export default function Arena() {
     }
   };
 
-  const handleSaveBot = () => {
-    saveUserBot('2', botCode);
+  const handleSaveBot = async () => {
+    if (!currentUserId) {
+      alert('No user profile found. Please register first.');
+      return;
+    }
+    await saveUserBot(currentUserId, botCode);
+    const refreshed = await fetchUsers();
+    setUsers(refreshed);
     alert('Bot script saved!');
   };
 
@@ -256,9 +284,15 @@ export default function Arena() {
     setStatusText('Game Started!');
   };
 
-  const handleChallenge = (oppId) => {
-    const oppUser = fetchUsers().find(u => u.id === oppId);
+  const handleChallenge = async (oppId) => {
+    const allUsers = await fetchUsers();
+    const oppUser = allUsers.find(u => u.id === oppId);
     if (!oppUser) return;
+
+    // Pre-load opponent bot code
+    const oppBot = await getUserBot(oppId);
+    opponentCodeRef.current = oppBot ? oppBot.code : "return null;";
+
     setOpponentId(oppId);
     setGameMode('Bot_vs_Bot');
     setBoard(createBoard());
