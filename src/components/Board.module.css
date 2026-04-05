@@ -1,0 +1,99 @@
+.boardContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(8, 50px);
+  grid-template-rows: repeat(8, 50px);
+  background: var(--surface);
+  padding: 10px;
+  border-radius: 12px;
+  gap: 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+}
+
+.cell {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.3s ease;
+}
+
+.cell:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.validHint::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background-color: var(--accent);
+  border-radius: 50%;
+  opacity: 0.5;
+  box-shadow: 0 0 10px var(--accent);
+  transition: opacity 0.3s ease;
+}
+
+.cell:hover .validHint::after {
+  opacity: 0.8;
+}
+
+.disc {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  position: absolute;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+}
+
+.discBlack {
+  background: linear-gradient(145deg, #2b2b2b, #000000);
+  transform: rotateY(0deg);
+}
+
+.discWhite {
+  background: linear-gradient(145deg, #ffffff, #d4d4d4);
+  transform: rotateY(180deg);
+}
+
+.disc.flipToWhite {
+  transform: rotateY(180deg);
+}
+
+.disc.flipToBlack {
+  transform: rotateY(0deg);
+}
+
+/* Because a disc has front and back, let's just cheat with simple front faces */
+.disc::before, .disc::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 50%;
+  backface-visibility: hidden;
+}
+
+.disc::before {
+  /* Front face (Black) */
+  background: linear-gradient(145deg, #2b2b2b, #000000);
+  transform: rotateY(0deg);
+}
+
+.disc::after {
+  /* Back face (White) */
+  background: linear-gradient(145deg, #ffffff, #d4d4d4);
+  transform: rotateY(180deg);
+}
+
