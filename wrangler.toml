@@ -5,3 +5,7 @@ main = "worker/index.js"
 [assets]
 directory = "./out"
 binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "REVERSI_KV"
+id = "00da691f8e5045a8bda01b77e63963ba"
