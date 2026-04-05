@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Board from '../components/Board';
 import Leaderboard from '../components/Leaderboard';
 import { createBoard, getValidMoves, playMove, isGameOver, getScore, BLACK, WHITE } from '../lib/reversi';
-import { getUserBot, saveUserBot, fetchUsers, updateUserElo, addMatchRecord } from '../lib/db';
+import { getUserBot, saveUserBot, fetchUsers, updateUserElo, addMatchRecord, registerUser } from '../lib/db';
 import { calculateElo } from '../lib/elo';
 
 const DEFAULT_BOT_CODE = `// Get the best score directly
@@ -25,6 +25,12 @@ export default function Arena() {
   const [isThinking, setIsThinking] = useState(false);
   const [isAutoRun, setIsAutoRun] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [currentUsername, setCurrentUsername] = useState('');
+  const [opponentName, setOpponentName] = useState('System AI');
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerInput, setRegisterInput] = useState('');
+  const [registerError, setRegisterError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   const workerRef = useRef(null);
   const opponentWorkerRef = useRef(null);
@@ -38,24 +44,39 @@ export default function Arena() {
     setBoard(createBoard());
 
     async function init() {
+      // Check if user already registered (stored in localStorage)
+      const savedUserId = localStorage.getItem('reversi_user_id');
+      const savedUsername = localStorage.getItem('reversi_username');
+
       // Load user list
       const allUsers = await fetchUsers();
       setUsers(allUsers);
 
-      // Determine current user id (first non-bot, non-system user)
-      const me = allUsers.find(u => !u.isBot && u.username !== 'System AI');
-      const myId = me ? me.id : null;
-      setCurrentUserId(myId);
-
-      // Load my bot code
-      if (myId) {
-        const bot = await getUserBot(myId);
-        if (bot) setBotCode(bot.code);
+      if (savedUserId && savedUsername) {
+        // Verify user still exists in DB
+        const existing = allUsers.find(u => u.id === savedUserId);
+        if (existing) {
+          setCurrentUserId(savedUserId);
+          setCurrentUsername(savedUsername);
+          // Load my bot code
+          const bot = await getUserBot(savedUserId);
+          if (bot) setBotCode(bot.code);
+        } else {
+          // Stale session — ask to register again
+          localStorage.removeItem('reversi_user_id');
+          localStorage.removeItem('reversi_username');
+          setShowRegister(true);
+        }
+      } else {
+        // First time visitor — show registration
+        setShowRegister(true);
       }
 
       // Pre-load System AI code
       const sysBot = await getUserBot('1');
       if (sysBot) sysAiCodeRef.current = sysBot.code;
+
+      setIsLoading(false);
     }
     init();
 
@@ -66,6 +87,27 @@ export default function Arena() {
       opponentWorkerRef.current?.terminate();
     };
   }, []);
+
+  const handleRegister = async () => {
+    const name = registerInput.trim();
+    if (!name) { setRegisterError('Please enter a username.'); return; }
+    if (name.length < 2) { setRegisterError('Username must be at least 2 characters.'); return; }
+
+    try {
+      const newUser = await registerUser(name);
+      localStorage.setItem('reversi_user_id', newUser.id);
+      localStorage.setItem('reversi_username', name);
+      setCurrentUserId(newUser.id);
+      setCurrentUsername(name);
+      setShowRegister(false);
+      setRegisterError('');
+      // Refresh user list
+      const allUsers = await fetchUsers();
+      setUsers(allUsers);
+    } catch (err) {
+      setRegisterError(err.message);
+    }
+  };
 
   const handleGameOver = useCallback(async (currentBoard) => {
     const scores = getScore(currentBoard);
@@ -281,6 +323,7 @@ export default function Arena() {
     setGameActive(true);
     setIsThinking(false);
     setIsAutoRun(false);
+    setOpponentName('System AI');
     setStatusText('Game Started!');
   };
 
@@ -294,6 +337,7 @@ export default function Arena() {
     opponentCodeRef.current = oppBot ? oppBot.code : "return null;";
 
     setOpponentId(oppId);
+    setOpponentName(oppUser.username);
     setGameMode('Player_vs_Bot');
     setBoard(createBoard());
     setCurrentPlayer(BLACK);
@@ -301,6 +345,77 @@ export default function Arena() {
     setStatusText(`Challenge: You vs ${oppUser.username} (click to play)`);
   };
 
+  // Get display name for black player
+  const getBlackName = () => {
+    if (gameMode === 'Player_vs_AI' || gameMode === 'Player_vs_Bot' || gameMode === 'Bot_vs_AI' || gameMode === 'Bot_vs_Bot') {
+      return currentUsername || 'You';
+    }
+    return 'Black';
+  };
+
+  const getWhiteName = () => {
+    if (gameMode === 'Player_vs_Bot' || gameMode === 'Bot_vs_Bot') {
+      return opponentName;
+    }
+    return 'System AI';
+  };
+
+  // -------------------------------------------------------------------------
+  // Registration modal
+  // -------------------------------------------------------------------------
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: '1.2rem' }}>Loading...</p>
+      </div>
+    );
+  }
+
+  if (showRegister) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <div className="glass-panel" style={{ maxWidth: '420px', width: '100%', textAlign: 'center' }}>
+          <h2 style={{ marginBottom: '8px' }}>⬡ Welcome to Reversi AI</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.95rem' }}>
+            Choose a username to join the arena and compete.
+          </p>
+          <input
+            type="text"
+            placeholder="Enter your username"
+            value={registerInput}
+            onChange={e => setRegisterInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleRegister()}
+            autoFocus
+            style={{
+              width: '100%', padding: '12px 16px',
+              background: 'rgba(0,0,0,0.3)', color: '#fff',
+              border: '1px solid var(--border)', borderRadius: '8px',
+              fontSize: '1rem', marginBottom: '12px', outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+          {registerError && (
+            <p style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: '12px' }}>{registerError}</p>
+          )}
+          <button
+            onClick={handleRegister}
+            style={{
+              width: '100%', padding: '12px',
+              background: 'var(--primary)', color: '#fff',
+              border: 'none', borderRadius: '8px',
+              fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer',
+            }}
+          >
+            Enter Arena
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Main arena UI
+  // -------------------------------------------------------------------------
   return (
     <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
 
@@ -309,7 +424,45 @@ export default function Arena() {
         
         <div className="glass-panel">
           <h2>Arena</h2>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>{statusText}</p>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '12px' }}>{statusText}</p>
+
+          {/* Player labels */}
+          {gameActive && (
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              marginBottom: '16px', padding: '10px 16px',
+              background: 'rgba(0,0,0,0.2)', borderRadius: '8px',
+              fontSize: '0.95rem',
+            }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                opacity: currentPlayer === BLACK ? 1 : 0.4,
+                fontWeight: currentPlayer === BLACK ? 'bold' : 'normal',
+                transition: 'opacity 0.3s',
+              }}>
+                <span style={{
+                  display: 'inline-block', width: '16px', height: '16px',
+                  borderRadius: '50%', background: '#111', border: '2px solid #888',
+                }}></span>
+                <span>{getBlackName()}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(Black)</span>
+              </div>
+              <span style={{ color: 'var(--text-muted)' }}>vs</span>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                opacity: currentPlayer === WHITE ? 1 : 0.4,
+                fontWeight: currentPlayer === WHITE ? 'bold' : 'normal',
+                transition: 'opacity 0.3s',
+              }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(White)</span>
+                <span>{getWhiteName()}</span>
+                <span style={{
+                  display: 'inline-block', width: '16px', height: '16px',
+                  borderRadius: '50%', background: '#eee', border: '2px solid #888',
+                }}></span>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
             <button onClick={() => startGame('Player_vs_AI')}>Play Manually</button>
@@ -385,7 +538,7 @@ export default function Arena() {
       </div>
 
       {/* Right Sidebar Column */}
-      <Leaderboard users={users} onChallenge={handleChallenge} />
+      <Leaderboard users={users} onChallenge={handleChallenge} currentUserId={currentUserId} />
 
     </div>
   );

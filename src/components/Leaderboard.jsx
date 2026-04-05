@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Leaderboard({ users, onChallenge }) {
+export default function Leaderboard({ users, onChallenge, currentUserId }) {
   return (
     <div className="glass-panel" style={{ flex: '1', minWidth: '350px', maxWidth: '450px', height: 'fit-content' }}>
       <h2 style={{ marginBottom: '20px', color: 'var(--primary)' }}>Global Leaderboard</h2>
@@ -30,7 +30,7 @@ export default function Leaderboard({ users, onChallenge }) {
             {u.elo}
           </div>
           <div>
-            {u.hasBot && u.id !== '2' && (
+            {u.hasBot && u.id !== currentUserId && (
               <button 
                 onClick={() => onChallenge(u.id)}
                 style={{
@@ -42,7 +42,7 @@ export default function Leaderboard({ users, onChallenge }) {
                 Challenge
               </button>
             )}
-            {u.id === '2' && (
+            {u.id === currentUserId && (
                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(You)</span>
             )}
            </div>
