@@ -319,6 +319,14 @@ export default function Arena() {
   const handleForfeit = async () => {
     // Only apply forfeit penalty if it's an active, ranked match against a real user
     if (gameActive && currentUserId && opponentId && opponentId !== currentUserId && opponentId !== '1' && (gameMode === 'Player_vs_Bot' || gameMode === 'Bot_vs_Bot')) {
+      
+      // Check if board is in initial state (only 4 pieces)
+      let piecesCount = 0;
+      if (board && board.length) {
+        for(let r=0; r<8; r++) for(let c=0; c<8; c++) if(board[r][c] !== 0) piecesCount++;
+      }
+      if (piecesCount <= 4) return; // Haven't started yet, no penalty
+
       const allUsers = await fetchUsers();
       const me = allUsers.find(u => u.id === currentUserId);
       const op = allUsers.find(u => u.id === opponentId);
