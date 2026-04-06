@@ -316,7 +316,27 @@ export default function Arena() {
     alert('Bot script saved!');
   };
 
-  const startGame = (mode) => {
+  const handleForfeit = async () => {
+    // Only apply forfeit penalty if it's an active, ranked match against a real user
+    if (gameActive && currentUserId && opponentId && opponentId !== currentUserId && opponentId !== '1' && (gameMode === 'Player_vs_Bot' || gameMode === 'Bot_vs_Bot')) {
+      const allUsers = await fetchUsers();
+      const me = allUsers.find(u => u.id === currentUserId);
+      const op = allUsers.find(u => u.id === opponentId);
+      if (me && op) {
+        // me scores 0, op scores 1
+        const [newMe, newOp] = calculateElo(me.elo, op.elo, 0, 1);
+        await updateUserElo(currentUserId, newMe);
+        await updateUserElo(opponentId, newOp);
+        await addMatchRecord({ playerId: currentUserId, opponentId, scoreMe: 0, myElo: newMe, opElo: newOp });
+        const refreshed = await fetchUsers();
+        setUsers(refreshed);
+        alert(`You forfeited the match! Elo penalty applied: ${newMe} (was ${me.elo})`);
+      }
+    }
+  };
+
+  const startGame = async (mode) => {
+    await handleForfeit();
     setGameMode(mode);
     setBoard(createBoard());
     setCurrentPlayer(BLACK);
@@ -324,6 +344,7 @@ export default function Arena() {
     setIsThinking(false);
     setIsAutoRun(false);
     setOpponentName('System AI');
+    setOpponentId('1');
     setStatusText('Game Started!');
   };
 
@@ -331,6 +352,8 @@ export default function Arena() {
     const allUsers = await fetchUsers();
     const oppUser = allUsers.find(u => u.id === oppId);
     if (!oppUser) return;
+
+    await handleForfeit();
 
     // Pre-load opponent bot code
     const oppBot = await getUserBot(oppId);
@@ -467,6 +490,13 @@ export default function Arena() {
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
             <button onClick={() => startGame('Player_vs_AI')}>Play Manually</button>
             <button onClick={() => startGame('Bot_vs_AI')} style={{ background: 'var(--accent)' }}>Deploy Bot vs System AI</button>
+            {gameActive && (gameMode === 'Player_vs_Bot' || gameMode === 'Bot_vs_Bot') && opponentId && opponentId !== currentUserId && opponentId !== '1' && (
+              <button 
+                onClick={async () => { await handleForfeit(); setGameActive(false); setStatusText('Match Resigned.'); }} 
+                style={{ background: '#ef4444' }}>
+                Resign Match
+              </button>
+            )}
           </div>
 
           <Board board={board} validMoves={gameActive ? validMoves : []} onMove={handlePlayerMove} player={currentPlayer} />
