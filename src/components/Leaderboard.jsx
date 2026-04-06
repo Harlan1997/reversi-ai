@@ -29,7 +29,7 @@ export default function Leaderboard({ users, onChallenge, currentUserId }) {
           <div style={{ fontWeight: 'bold' }}>
             {u.elo}
           </div>
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
             {u.hasBot && u.id !== currentUserId && (
               <button 
                 onClick={() => onChallenge(u.id)}
@@ -40,6 +40,18 @@ export default function Leaderboard({ users, onChallenge, currentUserId }) {
                 }}
               >
                 Challenge
+              </button>
+            )}
+            {u.hasBot && u.id === currentUserId && (
+              <button 
+                onClick={() => onChallenge(u.id)}
+                style={{
+                  padding: '4px 8px', fontSize: '0.75rem', 
+                  background: '#10b981', color: '#fff',
+                  border: 'none', borderRadius: '4px', cursor: 'pointer'
+                }}
+              >
+                Test Bot
               </button>
             )}
             {u.id === currentUserId && (
