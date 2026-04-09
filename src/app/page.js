@@ -117,10 +117,11 @@ export default function Arena() {
     setGameActive(false);
     setIsAutoRun(false);
 
-    if ((gameMode === 'Bot_vs_AI' || gameMode === 'Bot_vs_Bot' || gameMode === 'Player_vs_Bot') && currentUserId) {
+    // Only record score if it's a PvP match against another real user
+    if ((gameMode === 'Bot_vs_Bot' || gameMode === 'Player_vs_Bot') && currentUserId && opponentId && opponentId !== '1' && opponentId !== currentUserId) {
       const allUsers = await fetchUsers();
       const meId = currentUserId;
-      const opId = (gameMode === 'Bot_vs_Bot' || gameMode === 'Player_vs_Bot') && opponentId ? opponentId : '1';
+      const opId = opponentId;
 
       const me = allUsers.find(u => u.id === meId);
       const op = allUsers.find(u => u.id === opId);
