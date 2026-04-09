@@ -287,7 +287,7 @@ export default function Arena() {
   }, [board, gameActive, currentPlayer, isThinking, runAI_User]);
 
   useEffect(() => {
-    if (gameActive && gameMode === 'Bot_vs_AI' && currentPlayer === BLACK && isAutoRun && !isThinking) {
+    if (gameActive && (gameMode === 'Bot_vs_AI' || gameMode === 'Bot_vs_Bot') && currentPlayer === BLACK && isAutoRun && !isThinking) {
       const timer = setTimeout(() => {
         handleBotStep();
       }, 300);
@@ -354,6 +354,17 @@ export default function Arena() {
     setOpponentName('System AI');
     setOpponentId('1');
     setStatusText('Game Started!');
+  };
+
+  const restartMatch = async (mode) => {
+    await handleForfeit();
+    setGameMode(mode);
+    setBoard(createBoard());
+    setCurrentPlayer(BLACK);
+    setGameActive(true);
+    setIsThinking(false);
+    setIsAutoRun(false);
+    setStatusText(`Match Started: ${mode === 'Bot_vs_Bot' ? 'Your Bot' : 'You'} vs ${opponentName}`);
   };
 
   const handleChallenge = async (oppId) => {
@@ -495,9 +506,18 @@ export default function Arena() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-            <button onClick={() => startGame('Player_vs_AI')}>Play Manually</button>
-            <button onClick={() => startGame('Bot_vs_AI')} style={{ background: 'var(--accent)' }}>Deploy Bot vs System AI</button>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+            <button onClick={() => (opponentId && opponentId !== '1') ? restartMatch('Player_vs_Bot') : startGame('Player_vs_AI')}>
+              Play Manually {opponentId && opponentId !== '1' ? `vs ${opponentName}` : ''}
+            </button>
+            <button onClick={() => (opponentId && opponentId !== '1') ? restartMatch('Bot_vs_Bot') : startGame('Bot_vs_AI')} style={{ background: 'var(--accent)' }}>
+              Deploy Bot {opponentId && opponentId !== '1' ? `vs ${opponentName}'s AI` : 'vs System AI'}
+            </button>
+            {opponentId && opponentId !== '1' && (
+              <button onClick={() => startGame('Player_vs_AI')} style={{ background: 'var(--surface-hover)' }}>
+                Cancel Challenge
+              </button>
+            )}
             {gameActive && (gameMode === 'Player_vs_Bot' || gameMode === 'Bot_vs_Bot') && opponentId && opponentId !== currentUserId && opponentId !== '1' && (
               <button 
                 onClick={async () => { await handleForfeit(); setGameActive(false); setStatusText('Match Resigned.'); }} 
@@ -509,7 +529,7 @@ export default function Arena() {
 
           <Board board={board} validMoves={gameActive ? validMoves : []} onMove={handlePlayerMove} player={currentPlayer} />
 
-          {gameMode === 'Bot_vs_AI' && gameActive && (
+          {(gameMode === 'Bot_vs_AI' || gameMode === 'Bot_vs_Bot') && gameActive && (
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
               <button 
                 onClick={handleBotStep} 
