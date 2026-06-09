@@ -4,17 +4,17 @@ export default function Leaderboard({ users, onChallenge, currentUserId }) {
   return (
     <div className="glass-panel" style={{ flex: '1', minWidth: '350px', maxWidth: '450px', height: 'fit-content' }}>
       <h2 style={{ marginBottom: '20px', color: 'var(--primary)' }}>Global Leaderboard</h2>
-      
+
       <div style={{ display: 'grid', gridTemplateColumns: '50px 1fr 60px 80px', gap: '10px', padding: '10px 10px', borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
         <div>Rank</div>
         <div>Player</div>
         <div>Elo</div>
         <div>Action</div>
       </div>
-      
+
       {users.map((u, index) => (
-        <div key={u.id} style={{ 
-          display: 'grid', gridTemplateColumns: '50px 1fr 60px 80px', gap: '10px', 
+        <div key={u.id} style={{
+          display: 'grid', gridTemplateColumns: '50px 1fr 60px 80px', gap: '10px',
           padding: '15px 10px', borderBottom: '1px solid rgba(255,255,255,0.05)',
           background: index === 0 ? 'linear-gradient(90deg, rgba(255, 71, 133, 0.1) 0%, transparent 100%)' : 'transparent',
           alignItems: 'center'
@@ -31,10 +31,10 @@ export default function Leaderboard({ users, onChallenge, currentUserId }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
             {u.hasBot && u.id !== currentUserId && (
-              <button 
+              <button
                 onClick={() => onChallenge(u.id)}
                 style={{
-                  padding: '4px 8px', fontSize: '0.75rem', 
+                  padding: '4px 8px', fontSize: '0.75rem',
                   background: 'var(--accent)', color: '#fff',
                   border: 'none', borderRadius: '4px', cursor: 'pointer'
                 }}
@@ -43,10 +43,10 @@ export default function Leaderboard({ users, onChallenge, currentUserId }) {
               </button>
             )}
             {u.hasBot && u.id === currentUserId && (
-              <button 
+              <button
                 onClick={() => onChallenge(u.id)}
                 style={{
-                  padding: '4px 8px', fontSize: '0.75rem', 
+                  padding: '4px 8px', fontSize: '0.75rem',
                   background: '#10b981', color: '#fff',
                   border: 'none', borderRadius: '4px', cursor: 'pointer'
                 }}
@@ -55,9 +55,9 @@ export default function Leaderboard({ users, onChallenge, currentUserId }) {
               </button>
             )}
             {u.id === currentUserId && (
-               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(You)</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(You)</span>
             )}
-           </div>
+          </div>
         </div>
       ))}
     </div>

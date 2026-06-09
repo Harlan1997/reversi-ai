@@ -4,6 +4,12 @@ export async function handleMatch(request, env) {
   const kv = env.REVERSI_KV;
   await ensureSeeded(kv);
 
+  if (request.method === 'GET') {
+    const matchesRaw = await kv.get('matches');
+    const matches = matchesRaw ? JSON.parse(matchesRaw) : [];
+    return json(matches);
+  }
+
   if (request.method === 'POST') {
     const body = await request.json();
     const matchesRaw = await kv.get('matches');

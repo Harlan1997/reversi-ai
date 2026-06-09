@@ -153,6 +153,16 @@ export async function fetchUsers() {
   return res.json();
 }
 
+export async function fetchMatches() {
+  if (isLocal()) {
+    const db = getLocalDb();
+    return db.matches || [];
+  }
+  const res = await fetch('/api/match');
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function getUserBot(userId) {
   if (isLocal()) {
     const db = getLocalDb();

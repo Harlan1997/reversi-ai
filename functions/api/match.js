@@ -1,7 +1,17 @@
 /**
+ * GET  /api/match — Get match history.
  * POST /api/match — Record a match result. Body: { playerId, opponentId, scoreMe, myElo, opElo }
  */
 import { ensureSeeded, jsonResponse } from '../lib/seed.js';
+
+export async function onRequestGet(context) {
+  const kv = context.env.REVERSI_KV;
+  await ensureSeeded(kv);
+
+  const matchesRaw = await kv.get('matches');
+  const matches = matchesRaw ? JSON.parse(matchesRaw) : [];
+  return jsonResponse(matches);
+}
 
 export async function onRequestPost(context) {
   const kv = context.env.REVERSI_KV;
@@ -21,7 +31,7 @@ export async function onRequestOptions() {
   return new Response(null, {
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     },
   });

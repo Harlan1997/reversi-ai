@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Board from '../components/Board';
 import Leaderboard from '../components/Leaderboard';
 import { createBoard, getValidMoves, playMove, isGameOver, getScore, BLACK, WHITE } from '../lib/reversi';
-import { getUserBot, saveUserBot, fetchUsers, updateUserElo, addMatchRecord, registerUser } from '../lib/db';
+import { getUserBot, saveUserBot, fetchUsers, fetchMatches, updateUserElo, addMatchRecord, registerUser } from '../lib/db';
 import { calculateElo } from '../lib/elo';
 
 const DEFAULT_BOT_CODE = `// Get the best score directly
@@ -128,18 +128,78 @@ export default function Arena() {
 
       if (me && op) {
         const scoreMe = blackScore > whiteScore ? 1 : blackScore === whiteScore ? 0.5 : 0;
-        const scoreOp = 1 - scoreMe;
-        const [newMe, newOp] = calculateElo(me.elo, op.elo, scoreMe, scoreOp);
 
-        await updateUserElo(meId, newMe);
-        await updateUserElo(opId, newOp);
-        await addMatchRecord({ playerId: meId, opponentId: opId, scoreMe, myElo: newMe, opElo: newOp });
+        if (gameMode === 'Bot_vs_Bot') {
+          // Fetch match history to count recent matches for anti-abuse decay
+          const matches = await fetchMatches();
+          const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+          const recentMatches = matches.filter(m => {
+            const matchTime = new Date(m.date).getTime();
+            return matchTime > oneDayAgo && m.isRated !== false && (
+              (m.playerId === meId && m.opponentId === opId) ||
+              (m.playerId === opId && m.opponentId === meId)
+            );
+          });
+          const matchCount = recentMatches.length;
 
-        const refreshed = await fetchUsers();
-        setUsers(refreshed);
-        setTimeout(() => {
-          alert(`Match Recorded! Your new ELO: ${newMe} (was ${me.elo})`);
-        }, 100);
+          let currentK = 32;
+          let decayPercent = "100%";
+          if (matchCount === 1) {
+            currentK = 16;
+            decayPercent = "50%";
+          } else if (matchCount === 2) {
+            currentK = 8;
+            decayPercent = "25%";
+          } else if (matchCount >= 3) {
+            currentK = 0;
+            decayPercent = "0% (Unrated)";
+          }
+
+          const scoreOp = 1 - scoreMe;
+          const [newMe, newOp] = calculateElo(me.elo, op.elo, scoreMe, scoreOp, currentK);
+
+          if (currentK > 0) {
+            await updateUserElo(meId, newMe);
+            await updateUserElo(opId, newOp);
+          }
+
+          await addMatchRecord({
+            playerId: meId,
+            opponentId: opId,
+            scoreMe,
+            myElo: newMe,
+            opElo: newOp,
+            isRated: currentK > 0,
+            kFactor: currentK
+          });
+
+          const refreshed = await fetchUsers();
+          setUsers(refreshed);
+
+          setTimeout(() => {
+            if (currentK === 0) {
+              alert(`Match Recorded (Unrated)! Daily bot match limit (max 3) reached. Elo unchanged.`);
+            } else if (currentK < 32) {
+              alert(`Match Recorded (Decayed ${decayPercent})! Your new ELO: ${newMe} (was ${me.elo})`);
+            } else {
+              alert(`Match Recorded! Your new ELO: ${newMe} (was ${me.elo})`);
+            }
+          }, 100);
+        } else {
+          // Player_vs_Bot: Unrated
+          await addMatchRecord({
+            playerId: meId,
+            opponentId: opId,
+            scoreMe,
+            myElo: me.elo,
+            opElo: op.elo,
+            isRated: false,
+            mode: 'Player_vs_Bot'
+          });
+          setTimeout(() => {
+            alert(`Match finished! (Unrated - manual challenge matches do not affect Elo ratings)`);
+          }, 100);
+        }
       }
     }
   }, [gameMode, opponentId, currentUserId]);
@@ -320,11 +380,11 @@ export default function Arena() {
   const handleForfeit = async () => {
     // Only apply forfeit penalty if it's an active, ranked match against a real user
     if (gameActive && currentUserId && opponentId && opponentId !== currentUserId && opponentId !== '1' && (gameMode === 'Player_vs_Bot' || gameMode === 'Bot_vs_Bot')) {
-      
+
       // Check if board is in initial state (only 4 pieces)
       let piecesCount = 0;
       if (board && board.length) {
-        for(let r=0; r<8; r++) for(let c=0; c<8; c++) if(board[r][c] !== 0) piecesCount++;
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (board[r][c] !== 0) piecesCount++;
       }
       if (piecesCount <= 4) return; // Haven't started yet, no penalty
 
@@ -332,14 +392,72 @@ export default function Arena() {
       const me = allUsers.find(u => u.id === currentUserId);
       const op = allUsers.find(u => u.id === opponentId);
       if (me && op) {
-        // me scores 0, op scores 1
-        const [newMe, newOp] = calculateElo(me.elo, op.elo, 0, 1);
-        await updateUserElo(currentUserId, newMe);
-        await updateUserElo(opponentId, newOp);
-        await addMatchRecord({ playerId: currentUserId, opponentId, scoreMe: 0, myElo: newMe, opElo: newOp });
-        const refreshed = await fetchUsers();
-        setUsers(refreshed);
-        alert(`You forfeited the match! Elo penalty applied: ${newMe} (was ${me.elo})`);
+        if (gameMode === 'Bot_vs_Bot') {
+          // Check anti-abuse count
+          const matches = await fetchMatches();
+          const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+          const recentMatches = matches.filter(m => {
+            const matchTime = new Date(m.date).getTime();
+            return matchTime > oneDayAgo && m.isRated !== false && (
+              (m.playerId === currentUserId && m.opponentId === opponentId) ||
+              (m.playerId === opponentId && m.opponentId === currentUserId)
+            );
+          });
+          const matchCount = recentMatches.length;
+
+          let currentK = 32;
+          let decayPercent = "100%";
+          if (matchCount === 1) {
+            currentK = 16;
+            decayPercent = "50%";
+          } else if (matchCount === 2) {
+            currentK = 8;
+            decayPercent = "25%";
+          } else if (matchCount >= 3) {
+            currentK = 0;
+            decayPercent = "0% (Unrated)";
+          }
+
+          // me scores 0, op scores 1
+          const [newMe, newOp] = calculateElo(me.elo, op.elo, 0, 1, currentK);
+          if (currentK > 0) {
+            await updateUserElo(currentUserId, newMe);
+            await updateUserElo(opponentId, newOp);
+          }
+          await addMatchRecord({
+            playerId: currentUserId,
+            opponentId,
+            scoreMe: 0,
+            myElo: newMe,
+            opElo: newOp,
+            isRated: currentK > 0,
+            kFactor: currentK,
+            type: 'forfeit'
+          });
+          const refreshed = await fetchUsers();
+          setUsers(refreshed);
+          
+          if (currentK === 0) {
+            alert(`You forfeited the match! (Unrated due to daily limit)`);
+          } else if (currentK < 32) {
+            alert(`You forfeited the match! Elo penalty applied (Decayed ${decayPercent}): ${newMe} (was ${me.elo})`);
+          } else {
+            alert(`You forfeited the match! Elo penalty applied: ${newMe} (was ${me.elo})`);
+          }
+        } else {
+          // Player_vs_Bot forfeit: unrated
+          await addMatchRecord({
+            playerId: currentUserId,
+            opponentId,
+            scoreMe: 0,
+            myElo: me.elo,
+            opElo: op.elo,
+            isRated: false,
+            mode: 'Player_vs_Bot',
+            type: 'forfeit'
+          });
+          alert(`Match forfeited! (Unrated - manual challenge matches do not affect Elo ratings)`);
+        }
       }
     }
   };
@@ -464,7 +582,7 @@ export default function Arena() {
 
       {/* Main Content Column for Game and Bot */}
       <div style={{ flex: '2', display: 'flex', flexDirection: 'column', gap: '40px', minWidth: '450px' }}>
-        
+
         <div className="glass-panel">
           <h2>Arena</h2>
           <p style={{ color: 'var(--text-muted)', marginBottom: '12px' }}>{statusText}</p>
@@ -520,8 +638,8 @@ export default function Arena() {
               </button>
             )}
             {gameActive && (gameMode === 'Player_vs_Bot' || gameMode === 'Bot_vs_Bot') && opponentId && opponentId !== currentUserId && opponentId !== '1' && (
-              <button 
-                onClick={async () => { await handleForfeit(); setGameActive(false); setStatusText('Match Resigned.'); }} 
+              <button
+                onClick={async () => { await handleForfeit(); setGameActive(false); setStatusText('Match Resigned.'); }}
                 style={{ background: '#ef4444' }}>
                 Resign Match
               </button>
@@ -532,13 +650,13 @@ export default function Arena() {
 
           {(gameMode === 'Bot_vs_AI' || gameMode === 'Bot_vs_Bot') && gameActive && (
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              <button 
-                onClick={handleBotStep} 
+              <button
+                onClick={handleBotStep}
                 disabled={isThinking || currentPlayer !== BLACK || isAutoRun}
-                style={{ 
-                  background: (isThinking || currentPlayer !== BLACK || isAutoRun) ? 'var(--surface-hover)' : 'var(--primary)', 
-                  padding: '10px 30px', 
-                  fontSize: '1rem', 
+                style={{
+                  background: (isThinking || currentPlayer !== BLACK || isAutoRun) ? 'var(--surface-hover)' : 'var(--primary)',
+                  padding: '10px 30px',
+                  fontSize: '1rem',
                   minWidth: '150px',
                   cursor: (isThinking || currentPlayer !== BLACK || isAutoRun) ? 'not-allowed' : 'pointer',
                   border: 'none',
@@ -550,13 +668,13 @@ export default function Arena() {
                 }}>
                 {isThinking && currentPlayer === BLACK ? 'Thinking...' : 'Next Step'}
               </button>
-              
-              <button 
-                onClick={() => setIsAutoRun(!isAutoRun)} 
-                style={{ 
-                  background: isAutoRun ? '#ef4444' : '#10b981', 
-                  padding: '10px 20px', 
-                  fontSize: '1rem', 
+
+              <button
+                onClick={() => setIsAutoRun(!isAutoRun)}
+                style={{
+                  background: isAutoRun ? '#ef4444' : '#10b981',
+                  padding: '10px 20px',
+                  fontSize: '1rem',
                   minWidth: '120px',
                   cursor: 'pointer',
                   border: 'none',
@@ -575,7 +693,7 @@ export default function Arena() {
         <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column' }}>
           <h2>Next-Step Algorithm (Bot)</h2>
           <p style={{ color: 'var(--text-muted)', marginBottom: '10px', fontSize: '0.9rem' }}>
-            Write a javascript function body. It receives <code>board</code> (2D array) and <code>myPlayer</code> (1 or 2). <br/>
+            Write a javascript function body. It receives <code>board</code> (2D array) and <code>myPlayer</code> (1 or 2). <br />
             Must return <code>{'{ row, col }'}</code>.
           </p>
 
@@ -591,7 +709,7 @@ export default function Arena() {
             }}
           />
           <div style={{ display: 'flex' }}>
-             <button onClick={handleSaveBot}>Save Algorithm</button>
+            <button onClick={handleSaveBot}>Save Algorithm</button>
           </div>
         </div>
       </div>
